@@ -1,0 +1,216 @@
+
+---
+
+## 4. `main.py` (full code)
+
+Create a file named `main.py` and paste this:
+
+```python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+    roc_curve,
+)
+import joblib
+
+
+def load_data():
+    """Load breast cancer dataset and return DataFrame, features, and target."""
+    data = load_breast_cancer()
+    X = pd.DataFrame(data.data, columns=data.feature_names)
+    y = pd.Series(data.target, name="target")
+    return X, y, data
+
+
+def explore_data(X, y):
+    """Print basic info about the dataset."""
+    print("==== DATASET INFO ====")
+    print(f"Number of samples: {X.shape[0]}")
+    print(f"Number of features: {X.shape[1]}")
+    print("Class distribution:")
+    print(y.value_counts())
+    print("\nFirst 5 rows:")
+    print(X.head())
+    print("\nBasic statistics:")
+    print(X.describe().T.head())
+
+
+def train_test_split_data(X, y, test_size=0.2, random_state=42):
+    """Split into train and test sets."""
+    return train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
+
+
+def scale_features(X_train, X_test):
+    """Scale features using StandardScaler."""
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    return X_train_scaled, X_test_scaled, scaler
+
+
+def train_models(X_train_scaled, y_train):
+    """Train Logistic Regression and Random Forest models."""
+    models = {}
+
+    # Logistic Regression
+    log_reg = LogisticRegression(max_iter=500)
+    log_reg.fit(X_train_scaled, y_train)
+    models["logistic_regression"] = log_reg
+
+    # Random Forest
+    rf = RandomForestClassifier(
+        n_estimators=200,
+        random_state=42,
+        n_jobs=-1
+    )
+    rf.fit(X_train_scaled, y_train)
+    models["random_forest"] = rf
+
+    return models
+
+
+def evaluate_model(name, model, X_test_scaled, y_test):
+    """Evaluate a single model and print metrics."""
+    print(f"\n==== EVALUATION: {name} ====")
+    y_pred = model.predict(X_test_scaled)
+    y_proba = model.predict_proba(X_test_scaled)[:, 1]
+
+    acc = accuracy_score(y_test, y_pred)
+    auc = roc_auc_score(y_test, y_proba)
+
+    print(f"Accuracy: {acc:.4f}")
+    print(f"ROC-AUC: {auc:.4f}")
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred))
+
+    cm = confusion_matrix(y_test, y_pred)
+    print("Confusion Matrix:")
+    print(cm)
+
+    return acc, auc, y_pred, y_proba, cm
+
+
+def plot_confusion_matrix(cm, class_names):
+    """Plot confusion matrix."""
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm)
+
+    ax.set_xticks(np.arange(len(class_names)))
+    ax.set_yticks(np.arange(len(class_names)))
+    ax.set_xticklabels(class_names)
+    ax.set_yticklabels(class_names)
+    ax.set_xlabel("Predicted label")
+    ax.set_ylabel("True label")
+    ax.set_title("Confusion Matrix")
+
+    # Loop over data dimensions and create text annotations.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, cm[i, j], ha="center", va="center")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_roc_curve(y_test, y_proba, model_name):
+    """Plot ROC curve."""
+    fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+    fig, ax = plt.subplots()
+    ax.plot(fpr, tpr, label=f"{model_name} ROC")
+    ax.plot([0, 1], [0, 1], linestyle="--")
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title(f"ROC Curve - {model_name}")
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def save_model(model, scaler, filename="best_model.joblib"):
+    """Save model and scaler together."""
+    bundle = {"model": model, "scaler": scaler}
+    joblib.dump(bundle, filename)
+    print(f"\nSaved best model and scaler to {filename}")
+
+
+def demo_single_prediction(model, scaler, data, X):
+    """
+    Demonstrate a single prediction using a random sample.
+    """
+    print("\n==== DEMO: Single Prediction ====")
+    # take random index
+    idx = np.random.randint(0, X.shape[0])
+    sample = X.iloc[idx:idx+1]
+    sample_scaled = scaler.transform(sample)
+    pred = model.predict(sample_scaled)[0]
+    pred_proba = model.predict_proba(sample_scaled)[0, 1]
+
+    label_map = {0: "malignant", 1: "benign"}
+    print(f"Random sample index: {idx}")
+    print("Sample features:")
+    print(sample)
+    print(f"\nPredicted class: {label_map[pred]} (probability of benign: {pred_proba:.4f})")
+
+
+def main():
+    # 1. Load data
+    X, y, data = load_data()
+
+    # 2. Explore data
+    explore_data(X, y)
+
+    # 3. Split data
+    X_train, X_test, y_train, y_test = train_test_split_data(X, y)
+
+    # 4. Scale features
+    X_train_scaled, X_test_scaled, scaler = scale_features(X_train, X_test)
+
+    # 5. Train models
+    models = train_models(X_train_scaled, y_train)
+
+    # 6. Evaluate models & track best
+    results = {}
+    for name, model in models.items():
+        acc, auc, y_pred, y_proba, cm = evaluate_model(name, model, X_test_scaled, y_test)
+        results[name] = {
+            "model": model,
+            "accuracy": acc,
+            "auc": auc,
+            "y_pred": y_pred,
+            "y_proba": y_proba,
+            "cm": cm,
+        }
+
+    # 7. Choose best model (by AUC)
+    best_name = max(results, key=lambda k: results[k]["auc"])
+    best_info = results[best_name]
+    best_model = best_info["model"]
+
+    print(f"\n==== BEST MODEL: {best_name} ====")
+    print(f"Accuracy: {best_info['accuracy']:.4f}, ROC-AUC: {best_info['auc']:.4f}")
+
+    # 8. Plot confusion matrix and ROC for best model
+    class_names = ["malignant", "benign"]
+    plot_confusion_matrix(best_info["cm"], class_names)
+    plot_roc_curve(y_test, best_info["y_proba"], best_name)
+
+    # 9. Save best model
+    save_model(best_model, scaler, filename="best_model.joblib")
+
+    # 10. Demo single prediction
+    demo_single_prediction(best_model, scaler, data, X)
+
+
+if __name__ == "__main__":
+    main()
